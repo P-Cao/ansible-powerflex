@@ -52,9 +52,11 @@ options:
     - Managed devices - C(managed_device).
     - Deployments - C(deployment).
     - FirmwareRepository - C(firmware_repository).
+    - NVMe host - C(nvme_host)
     choices: [vol, storage_pool, protection_domain, sdc, sds,
              snapshot_policy, device, rcg, replication_pair,
-             fault_set, service_template, managed_device, deployment, firmware_repository]
+             fault_set, service_template, managed_device, deployment, firmware_repository,
+             nvme_host]
     type: list
     elements: str
   filters:
@@ -1902,6 +1904,69 @@ FirmwareRepository:
         "jobId": "Job-10d75a23-d801-4fdb-a2d0-7f6389ab75cf",
         "rcmapproved": false
     }]
+NVMe_Hosts:
+    description: Details of all NVMe hosts.
+    returned: always
+    type: list
+    contains:
+        id:
+            description: NVMe host id.
+            type: str
+        name:
+            description: NVMe host name.
+            type: str
+        nqn:
+            description: NQN of the NVMe host.
+            type: str
+    sample: [{
+        "hostOsFullType": "Generic",
+        "systemId": "f4c3b7f5c48cb00f",
+        "sdcApproved": null,
+        "sdcAgentActive": null,
+        "mdmIpAddressesCurrent": null,
+        "sdcIp": null,
+        "sdcIps": null,
+        "osType": null,
+        "perfProfile": null,
+        "peerMdmId": null,
+        "sdtId": null,
+        "mdmConnectionState": null,
+        "softwareVersionInfo": null,
+        "socketAllocationFailure": null,
+        "memoryAllocationFailure": null,
+        "versionInfo": null,
+        "sdcType": null,
+        "nqn": "nqn.2014-08.org.nvmexpress:uuid:79e90a42-47c9-a0f6-d9d3-51c47c72c7c1",
+        "maxNumPaths": 3,
+        "maxNumSysPorts": 3,
+        "sdcGuid": null,
+        "installedSoftwareVersionInfo": null,
+        "kernelVersion": null,
+        "kernelBuildNumber": null,
+        "sdcApprovedIps": null,
+        "hostType": "NVMeHost",
+        "sdrId": null,
+        "name": "example_nvme_host",
+        "id": "da8f60fd00010000",
+        "links": [
+            {
+                "rel": "self",
+                "href": "/api/instances/Host::da8f60fd00010000"
+            },
+            {
+                "rel": "/api/Host/relationship/Volume",
+                "href": "/api/instances/Host::da8f60fd00010000/relationships/Volume"
+            },
+            {
+                "rel": "/api/Host/relationship/NvmeController",
+                "href": "/api/instances/Host::da8f60fd00010000/relationships/NvmeController"
+            },
+            {
+                "rel": "/api/parent/relationship/systemId",
+                "href": "/api/instances/System::f4c3b7f5c48cb00f"
+            }
+        ]
+    }]
 '''
 
 from ansible.module_utils.basic import AnsibleModule
@@ -2008,10 +2073,31 @@ class PowerFlexInfo(object):
                 sdc = self.powerflex_conn.sdc.get(filter_fields=filter_dict)
             else:
                 sdc = self.powerflex_conn.sdc.get()
+            #filter out NVMe host entities
+            sdc = [obj for obj in sdc if obj.get('hostType') != 'NVMeHost']
             return result_list(sdc)
 
         except Exception as e:
             msg = 'Get SDC list from powerflex array failed with' \
+                  ' error %s' % (str(e))
+            LOG.error(msg)
+            self.module.fail_json(msg=msg)
+        
+    def get_nvme_host_list(self, filter_dict=None):
+        """ Get the list of NVMe hosts on a given PowerFlex storage system """
+
+        try:
+            LOG.info('Getting NVMe hosts list ')
+            if filter_dict:
+                sdc = self.powerflex_conn.sdc.get(filter_fields=filter_dict)
+            else:
+                sdc = self.powerflex_conn.sdc.get()
+            #filter out NVMe host entities
+            sdc = [obj for obj in sdc if obj.get('hostType') == 'NVMeHost']
+            return result_list(sdc)
+
+        except Exception as e:
+            msg = 'Get NVMe host list from powerflex array failed with' \
                   ' error %s' % (str(e))
             LOG.error(msg)
             self.module.fail_json(msg=msg)
@@ -2405,6 +2491,7 @@ class PowerFlexInfo(object):
         managed_device = []
         deployment = []
         firmware_repository = []
+        nvme_host = []
 
         subset = self.module.params['gather_subset']
         self.validate_subset(api_version, subset)
@@ -2437,6 +2524,8 @@ class PowerFlexInfo(object):
                 deployment = self.get_deployments_list()
             if 'firmware_repository' in subset:
                 firmware_repository = self.get_firmware_repository_list()
+            if 'nvme_host' in subset:
+                nvme_host = self.get_nvme_host_list(filter_dict=filter_dict)
 
         self.module.exit_json(
             Array_Details=array_details,
@@ -2454,7 +2543,8 @@ class PowerFlexInfo(object):
             ManagedDevices=managed_device,
             ServiceTemplates=service_template,
             Deployments=deployment,
-            FirmwareRepository=firmware_repository
+            FirmwareRepository=firmware_repository,
+            NVMe_Hosts=nvme_host
         )
 
 
@@ -2481,7 +2571,7 @@ def get_powerflex_info_parameters():
                            choices=['vol', 'storage_pool',
                                     'protection_domain', 'sdc', 'sds', 'snapshot_policy',
                                     'device', 'rcg', 'replication_pair', 'fault_set',
-                                    'service_template', 'managed_device', 'deployment', 'firmware_repository']),
+                                    'service_template', 'managed_device', 'deployment', 'firmware_repository', 'nvme_host']),
         filters=dict(type='list', required=False, elements='dict',
                      options=dict(filter_key=dict(type='str', required=True, no_log=False),
                                   filter_operator=dict(
